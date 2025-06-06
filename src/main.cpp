@@ -16,7 +16,9 @@ const int TICKTOCK_INTERVAL = 1000;
 const std::string ASSET_DIR = "./assets/";
 
 SDL_AudioDeviceID audio_device;
-SDL_AudioStream* the_audio;
+//SDL_AudioStream* the_audio;
+SDL_AudioStream* channel1;
+SDL_AudioStream* channel2;
 
 const SDL_AudioSpec DEFAULT_AUDIO_SPEC = {
 	.format = SDL_AUDIO_S16,
@@ -37,7 +39,7 @@ struct SoundWave {
 	static SoundWave* from_sinewave(float frequency);
 
 	/// Enqueue the sound to be played (can be done multiple times at once).
-	void enqueue();
+	void enqueue(int channel);
 };
 
 SoundWave* SoundWave::with_buffer(uint32_t byte_size)
@@ -78,11 +80,20 @@ SoundWave* SoundWave::from_sinewave(float frequency)
 	return wave;
 }
 
-void SoundWave::enqueue()
+void SoundWave::enqueue(int channel)
 {
-    if (!SDL_PutAudioStreamData(the_audio, data, byte_size)) {
-    	std::cerr << "error: SDL_PutAudioStreamData(): " << SDL_GetError() << "\n";
-    }
+	if (channel == 1) {
+		SDL_PutAudioStreamData(channel1, data, byte_size);
+	}
+	else if (channel == 2) {
+		SDL_PutAudioStreamData(channel2, data, byte_size);
+	}
+	else {
+		std::cerr << "error: no such channel: " << channel << "\n";
+	}
+    // if (!SDL_PutAudioStreamData(the_audio, data, byte_size)) {
+    // 	std::cerr << "error: SDL_PutAudioStreamData(): " << SDL_GetError() << "\n";
+    // }
 }
 
 static bool quit_requested = false;
@@ -111,21 +122,31 @@ int main(int argc, char *argv[]) {
 		return -1;
 	}
 
-	the_audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &tick_sound->audio_spec, nullptr, nullptr);
-	if (!the_audio) {
-		std::cerr << "error: SDL_OpenAudioDeviceStream(): " << SDL_GetError() << "\n";
+	// the_audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &tick_sound->audio_spec, nullptr, nullptr);
+	// if (!the_audio) {
+	// 	std::cerr << "error: SDL_OpenAudioDeviceStream(): " << SDL_GetError() << "\n";
+	// 	return -1;
+	// }
+
+	channel1 = SDL_CreateAudioStream(&DEFAULT_AUDIO_SPEC, &DEFAULT_AUDIO_SPEC);
+	channel2 = SDL_CreateAudioStream(&DEFAULT_AUDIO_SPEC, &DEFAULT_AUDIO_SPEC);
+	if (!channel1 || !channel2) {
+		std::cerr << "error: SDL_CreateAudioStream(): " << SDL_GetError() << "\n";
 		return -1;
 	}
 
+	SDL_BindAudioStream(audio_device, channel1);
+	SDL_BindAudioStream(audio_device, channel2);
+
     // Start audio playback
-	if (!SDL_ResumeAudioStreamDevice(the_audio)) {
-		std::cerr << "error: SDL_ResumeAudioStreamDevice(): " << SDL_GetError() << "\n";
-		return -1;
-	}
+	// if (!SDL_ResumeAudioStreamDevice(the_audio)) {
+	// 	std::cerr << "error: SDL_ResumeAudioStreamDevice(): " << SDL_GetError() << "\n";
+	// 	return -1;
+	// }
 
 	bool tick_flipflop = false;
 
-	// we want sound the bell appropriate number of times per whole hour,
+	// we want to sound the bell appropriate number of times per whole hour,
 	// but only once per whole hour
 	bool bell_already_sounded = false;
 
@@ -142,19 +163,15 @@ int main(int argc, char *argv[]) {
 
 		if ((current_tick - start_tick) >= TICKTOCK_INTERVAL) {
 
-			// alternate between "tick" and "tock"
-			tick_flipflop = !tick_flipflop;
-
-			// enqueue a tick/tock sound but do not get into another sound (the bell)
-			if (SDL_GetAudioStreamAvailable(the_audio) == 0) {
-				if (tick_flipflop) {
-					tick_sound->enqueue();
-				} else {
-					tock_sound->enqueue();
-				}
-			}
-
 			start_tick = current_tick;
+
+			// produce tick/tock sound, alternating between "tick" and "tock"
+			if (tick_flipflop) {
+				tick_sound->enqueue(1);
+			} else {
+				tock_sound->enqueue(1);
+			}
+			tick_flipflop = !tick_flipflop;
 
 			// look what the real time it is, for bell purposes
 			SDL_Time real_time;
@@ -173,9 +190,9 @@ int main(int argc, char *argv[]) {
 
 					// enqueue the appropriate number of strikes (the last one is long)
 					for (int i=0; i<date_time.hour-1; i++) {
-						short_bell_sound->enqueue();
+						short_bell_sound->enqueue(2);
 					}
-					bell_sound->enqueue();
+					bell_sound->enqueue(2);
 				}
 			}
 			else if (date_time.minute == 30) {
@@ -183,7 +200,7 @@ int main(int argc, char *argv[]) {
 					bell_already_sounded = true;
 
 					// a single strike at half of an hour
-					bell_sound->enqueue();
+					bell_sound->enqueue(2);
 				}
 			}
 			else {
@@ -198,7 +215,9 @@ int main(int argc, char *argv[]) {
 
 out:
 	// Cleanup
+	SDL_DestroyAudioStream(channel1);
+	SDL_DestroyAudioStream(channel2);
 	SDL_CloseAudioDevice(audio_device);
-	SDL_DestroyAudioStream(the_audio);
+//	SDL_DestroyAudioStream(the_audio);
 	return 0;
 }
