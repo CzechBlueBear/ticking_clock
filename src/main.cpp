@@ -2,7 +2,6 @@
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_init.h>
 #include <cmath>
-#include <iomanip>
 #include <iostream>
 #include <memory>
 
@@ -11,14 +10,13 @@ const int SAMPLE_RATE = 44100;
 const int BUFFER_SIZE = 2048;
 
 // Interval between tick-tock sounds, in milliseconds
-const int TICKTOCK_INTERVAL = 1000;
+const int TICKTOCK_INTERVAL = 800;
 
 const std::string ASSET_DIR = "./assets/";
 
 SDL_AudioDeviceID audio_device;
-//SDL_AudioStream* the_audio;
-SDL_AudioStream* channel1;
-SDL_AudioStream* channel2;
+SDL_AudioStream* channel1;		// for the tick-tock sound
+SDL_AudioStream* channel2;		// for the bell
 
 const SDL_AudioSpec DEFAULT_AUDIO_SPEC = {
 	.format = SDL_AUDIO_S16,
@@ -91,9 +89,6 @@ void SoundWave::enqueue(int channel)
 	else {
 		std::cerr << "error: no such channel: " << channel << "\n";
 	}
-    // if (!SDL_PutAudioStreamData(the_audio, data, byte_size)) {
-    // 	std::cerr << "error: SDL_PutAudioStreamData(): " << SDL_GetError() << "\n";
-    // }
 }
 
 static bool quit_requested = false;
@@ -122,12 +117,6 @@ int main(int argc, char *argv[]) {
 		return -1;
 	}
 
-	// the_audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &tick_sound->audio_spec, nullptr, nullptr);
-	// if (!the_audio) {
-	// 	std::cerr << "error: SDL_OpenAudioDeviceStream(): " << SDL_GetError() << "\n";
-	// 	return -1;
-	// }
-
 	channel1 = SDL_CreateAudioStream(&DEFAULT_AUDIO_SPEC, &DEFAULT_AUDIO_SPEC);
 	channel2 = SDL_CreateAudioStream(&DEFAULT_AUDIO_SPEC, &DEFAULT_AUDIO_SPEC);
 	if (!channel1 || !channel2) {
@@ -137,12 +126,6 @@ int main(int argc, char *argv[]) {
 
 	SDL_BindAudioStream(audio_device, channel1);
 	SDL_BindAudioStream(audio_device, channel2);
-
-    // Start audio playback
-	// if (!SDL_ResumeAudioStreamDevice(the_audio)) {
-	// 	std::cerr << "error: SDL_ResumeAudioStreamDevice(): " << SDL_GetError() << "\n";
-	// 	return -1;
-	// }
 
 	bool tick_flipflop = false;
 
@@ -181,15 +164,18 @@ int main(int argc, char *argv[]) {
 			}
 			SDL_DateTime date_time;
 			SDL_TimeToDateTime(real_time, &date_time, true);
-			std::cout << date_time.hour << ":" << date_time.minute << "\r" << std::flush;
 
 			// a full hour?
 			if (date_time.minute == 0) {
 				if (!bell_already_sounded) {
 					bell_already_sounded = true;
 
-					// enqueue the appropriate number of strikes (the last one is long)
-					for (int i=0; i<date_time.hour-1; i++) {
+					// enqueue the appropriate number of beats (the last one is long)
+					// (for 24-hour time, we ignore the AM/PM and only use 1-12 beats)
+					int beat_count = date_time.hour;
+					if (beat_count > 12) { beat_count -= 12; }
+					else if (beat_count == 0) { beat_count = 12; }		// 0 AM is twelve
+					for (int i=0; i < beat_count-1; i++) {
 						short_bell_sound->enqueue(2);
 					}
 					bell_sound->enqueue(2);
@@ -199,7 +185,7 @@ int main(int argc, char *argv[]) {
 				if (!bell_already_sounded) {
 					bell_already_sounded = true;
 
-					// a single strike at half of an hour
+					// a single bell at half of an hour
 					bell_sound->enqueue(2);
 				}
 			}
@@ -218,6 +204,5 @@ out:
 	SDL_DestroyAudioStream(channel1);
 	SDL_DestroyAudioStream(channel2);
 	SDL_CloseAudioDevice(audio_device);
-//	SDL_DestroyAudioStream(the_audio);
 	return 0;
 }
